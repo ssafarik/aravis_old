@@ -426,7 +426,6 @@ _missing_packet_check (ArvGvStreamThreadData *thread_data,
 static void
 _close_frame (ArvGvStreamThreadData *thread_data, ArvGvStreamFrameData *frame)
 {
-	GTimeVal current_time;
 	gint64 current_time_us;
 
 	if (frame->buffer->status == ARV_BUFFER_STATUS_SUCCESS)
@@ -450,9 +449,10 @@ _close_frame (ArvGvStreamThreadData *thread_data, ArvGvStreamFrameData *frame)
 				       ARV_STREAM_CALLBACK_TYPE_BUFFER_DONE,
 				       frame->buffer);
 
-	g_get_current_time (&current_time);
-	current_time_us = current_time.tv_sec * 1000000 + current_time.tv_usec;
-	if (thread_data->statistic_count > 5) {
+	current_time_us = g_get_real_time();
+
+	if (thread_data->statistic_count > 5)
+	{
 		arv_statistic_fill (thread_data->statistic, 0,
 				    current_time_us - frame->first_packet_time_us,
 				    frame->buffer->frame_id);
@@ -570,7 +570,6 @@ arv_gv_stream_thread (void *data)
 	ArvGvspPacket *packet;
 	guint32 packet_id;
 	guint32 frame_id;
-	GTimeVal current_time;
 	guint64 time_us;
 	GPollFD poll_fd;
 	size_t read_count;
@@ -603,8 +602,7 @@ arv_gv_stream_thread (void *data)
 
 		n_events = g_poll (&poll_fd, 1, timeout_ms);
 
-		g_get_current_time (&current_time);
-		time_us = current_time.tv_sec * 1000000 + current_time.tv_usec;
+		time_us = g_get_real_time();
 
 		if (n_events > 0) {
 			thread_data->n_received_packets++;
