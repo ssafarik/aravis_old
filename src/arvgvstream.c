@@ -472,83 +472,94 @@ _close_frame (ArvGvStreamThreadData *thread_data, ArvGvStreamFrameData *frame)
 
 static void
 _check_frame_completion (ArvGvStreamThreadData *thread_data,
-			 guint64 time_us,
-			 ArvGvStreamFrameData *current_frame)
+						 guint64 time_us,
+						 ArvGvStreamFrameData *current_frame)
 {
 	GSList 					*iter;
 	GSList					*iterNext;
 	ArvGvStreamFrameData	*frame;
 	gboolean				 can_close_frame = TRUE;
 
-	for (iter = thread_data->frames; iter != NULL;) {
+	for (iter=thread_data->frames; iter!=NULL; /*nop*/)
+	{
 		frame = iter->data;
 
-		if (can_close_frame &&
-		    thread_data->packet_resend == ARV_GV_STREAM_PACKET_RESEND_NEVER &&
-		    iter->next != NULL) {
-			frame->buffer->status = ARV_BUFFER_STATUS_MISSING_PACKETS;
-			arv_debug_stream_thread ("[GvStream::_check_frame_completion] Incomplete frame %u",
-						 frame->frame_id);
-			_close_frame (thread_data, frame);
+		if (can_close_frame)
+		{
+			if (thread_data->packet_resend == ARV_GV_STREAM_PACKET_RESEND_NEVER && iter->next)
+			{
+				frame->buffer->status = ARV_BUFFER_STATUS_MISSING_PACKETS;
+				arv_debug_stream_thread ("[GvStream::_check_frame_completion] Incomplete frame %u",
+							 frame->frame_id);
+				_close_frame (thread_data, frame);
 
-			// Go to the next frame, and delete the prior frame.
-			iterNext = iter->next;
-			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
-			iter = iterNext;
+				// Go to the next frame, and delete the prior frame.
+				iterNext = iter->next;
+				thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+				iter = iterNext;
 
-			continue;
-		}
-
-		if (can_close_frame &&
-		    frame->last_valid_packet == frame->n_packets - 1) {
-			frame->buffer->status = ARV_BUFFER_STATUS_SUCCESS;
-			arv_log_stream_thread ("[GvStream::_check_frame_completion] Completed frame %u",
-					       frame->frame_id);
-			_close_frame (thread_data, frame);
-
-			// Go to the next frame, and delete the prior frame.
-			iterNext = iter->next;
-			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
-			iter = iterNext;
-
-			continue;
-		}
-
-		if (can_close_frame &&
-		    time_us - frame->last_packet_time_us >= thread_data->frame_retention_us) {
-			frame->buffer->status = ARV_BUFFER_STATUS_TIMEOUT;
-			arv_debug_stream_thread ("[GvStream::_check_frame_completion] Timeout for frame %u "
-						 "at dt = %Lu",
-						 frame->frame_id,
-						 time_us - frame->first_packet_time_us);
-#if 0
-			if (arv_debug_check (&arv_debug_category_stream_thread, ARV_DEBUG_LEVEL_LOG)) {
-				int i;
-				arv_log_stream_thread ("frame_id          = %Lu", frame->frame_id);
-				arv_log_stream_thread ("last_valid_packet = %d", frame->last_valid_packet);
-				for (i = 0; i < frame->n_packets; i++) {
-					arv_log_stream_thread ("%d - time = %Lu%s", i,
-							       frame->packet_data[i].time_us,
-							       frame->packet_data[i].received ? " - OK" : "");
-				}
+				continue;
 			}
+
+			// Check for completed frame (i.e. all data packets are present).
+			if (frame->last_valid_packet == frame->n_packets-1)
+			{
+				frame->buffer->status = ARV_BUFFER_STATUS_SUCCESS;
+				arv_log_stream_thread ("[GvStream::_check_frame_completion] Completed frame %u",
+							   frame->frame_id);
+				_close_frame (thread_data, frame);
+
+				// Go to the next frame, and delete the prior frame.
+				iterNext = iter->next;
+				thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+				iter = iterNext;
+
+				continue;
+			}
+
+			// Check for expired frames (i.e. frame didn't complete within the allotted time).
+			if (time_us - frame->last_packet_time_us >= thread_data->frame_retention_us)
+			{
+				frame->buffer->status = ARV_BUFFER_STATUS_TIMEOUT;
+				arv_debug_stream_thread ("[GvStream::_check_frame_completion] Timeout for frame %u "
+							 "at dt = %Lu",
+							 frame->frame_id,
+							 time_us - frame->first_packet_time_us);
+#if 0
+				if (arv_debug_check (&arv_debug_category_stream_thread, ARV_DEBUG_LEVEL_LOG))
+				{
+					int i;
+					arv_log_stream_thread ("frame_id          = %Lu", frame->frame_id);
+					arv_log_stream_thread ("last_valid_packet = %d", frame->last_valid_packet);
+					for (i = 0; i < frame->n_packets; i++)
+					{
+						arv_log_stream_thread ("%d - time = %Lu%s", i,
+									   frame->packet_data[i].time_us,
+									   frame->packet_data[i].received ? " - OK" : "");
+					}
+				}
 #endif
-			_close_frame (thread_data, frame);
+				_close_frame (thread_data, frame);
 
-			// Go to the next frame, and delete the prior frame.
-			iterNext = iter->next;
-			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
-			iter = iterNext;
+				// Go to the next frame, and delete the prior frame.
+				iterNext = iter->next;
+				thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+				iter = iterNext;
 
-			continue;
+				continue;
+			}
 		}
 
 		can_close_frame = FALSE;
 
+		// If we're not on the current frame, then request all the packets.
 		if (frame != current_frame &&
 		    time_us - frame->last_packet_time_us >= thread_data->packet_timeout_us) {
 			_missing_packet_check (thread_data, frame, frame->n_packets - 1, time_us);
+
+			// Go to the next frame.
 			iter = iter->next;
+
 			continue;
 		}
 
