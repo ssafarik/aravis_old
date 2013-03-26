@@ -279,82 +279,91 @@ _process_data_trailer (ArvGvStreamThreadData *thread_data,
 
 static ArvGvStreamFrameData *
 _find_frame_data (ArvGvStreamThreadData *thread_data,
-		  guint32 frame_id,
-		  ArvGvspPacket *packet,
-		  guint32 packet_id,
-		  size_t read_count,
-		  guint64 time_us)
+				  guint32 frame_id,
+				  guint64 time_us)
 {
-	ArvGvStreamFrameData *frame = NULL;
-	ArvBuffer *buffer;
-	GSList *iter;
+	ArvGvStreamFrameData 	*rv = NULL;
+	ArvGvStreamFrameData 	*frame = NULL;
+	ArvBuffer 				*buffer;
+	GSList 					*iter;
 	guint 					 n_packets_leader  = 0;
 	guint 					 n_packets_data    = 0;
 	guint 					 n_packets_trailer = 0;
-	gint16 frame_id_inc;
+	guint 					 n_packets         = 0;
+	gint16 					 frame_id_inc;
 
-	for (iter = thread_data->frames; iter != NULL; iter = iter->next) {
+	// Search all frames for the requested frame.  If it's in the list, then we're done.
+	for (iter = thread_data->frames; iter != NULL; iter = iter->next)
+	{
 		frame = iter->data;
-		if (frame->frame_id == frame_id) {
+		if (frame->frame_id == frame_id)
+		{
 			frame->last_packet_time_us = time_us;
-			return frame;
+			rv = frame;
+			break;
 		}
 	}
 
-	frame_id_inc = (gint16) frame_id - (gint16) thread_data->last_frame_id;
-	if (frame_id_inc < 1  && frame_id_inc > -ARV_GV_STREAM_DISCARD_LATE_FRAME_THRESHOLD) {
-		arv_debug_stream_thread ("[GvStream::_find_frame_data] Discard late frame %u (last: %u)",
-					 frame_id, thread_data->last_frame_id);
-		return NULL;
+	// Frame is not in the list.  It's either a late request, or we need to create a new frame for the list.
+	if (!rv)
+	{
+		// If looking for an old frame, then skip it and move on.
+		frame_id_inc = (gint16) frame_id - (gint16) thread_data->last_frame_id;
+		if (frame_id_inc < 1  && frame_id_inc > -ARV_GV_STREAM_DISCARD_LATE_FRAME_THRESHOLD)
+		{
+			arv_debug_stream_thread ("[GvStream::_find_frame_data] Discard late frame %u (last: %u)",
+						 frame_id, thread_data->last_frame_id);
+		}
+		else // Requested frame is fresh enough, so create an empty frame ready for filling, and add it to the list.
+		{
+			buffer = arv_stream_pop_input_buffer (thread_data->stream);
+			if (buffer) // Buffer is still filling.
+			{
+				frame = g_new0 (ArvGvStreamFrameData, 1);
+
+				frame->buffer = buffer;
+				frame->frame_id = frame_id;
+				frame->last_valid_packet = -1;
+				frame->first_packet_time_us = time_us;
+				frame->last_packet_time_us = time_us;
+				frame->error_packet_received = FALSE;
+
+				_update_socket (thread_data, frame->buffer);
+				frame->buffer->status = ARV_BUFFER_STATUS_FILLING;
+
+				n_packets_leader = 1;
+				n_packets_data = (guint) ceil((double)frame->buffer->size / (double)thread_data->data_size);
+				n_packets_trailer = 1;
+				frame->n_packets = n_packets_leader + n_packets_data + n_packets_trailer;
+
+				frame->packet_data = g_new0 (ArvGvStreamPacketData, frame->n_packets);
+
+				if (thread_data->callback != NULL &&
+					frame->buffer != NULL)
+					thread_data->callback (thread_data->user_data,
+								   ARV_STREAM_CALLBACK_TYPE_START_BUFFER,
+								   NULL);
+
+				thread_data->last_frame_id = frame_id;
+
+				if (frame_id_inc > 1) {
+					thread_data->n_missing_frames++;
+					arv_log_stream_thread ("[GvStream::_find_frame_data] Missed %d frame(s) before %u",
+								   frame_id_inc - 1, frame_id);
+				}
+
+				thread_data->frames = g_slist_append (thread_data->frames, frame);
+
+				arv_log_stream_thread ("[GvStream::_find_frame_data] Start frame %u", frame_id);
+
+				rv = frame;
+			}
+			else
+				thread_data->n_underruns++;
+		}
 	}
 
-	buffer = arv_stream_pop_input_buffer (thread_data->stream);
-	if (buffer == NULL) {
-		thread_data->n_underruns++;
-
-		return NULL;
-	}
-
-	frame = g_new0 (ArvGvStreamFrameData, 1);
-
-	frame->error_packet_received = FALSE;
-
-	frame->frame_id = frame_id;
-	frame->last_valid_packet = -1;
-
-	frame->buffer = buffer;
-	_update_socket (thread_data, frame->buffer);
-	frame->buffer->status = ARV_BUFFER_STATUS_FILLING;
-	n_packets_leader = 1;
-	n_packets_data = (guint) ceil((double)frame->buffer->size / (double)thread_data->data_size);
-	n_packets_trailer = 1;
-	frame->n_packets = n_packets_leader + n_packets_data + n_packets_trailer;
-
-	frame->first_packet_time_us = time_us;
-	frame->last_packet_time_us = time_us;
-
-	frame->packet_data = g_new0 (ArvGvStreamPacketData, frame->n_packets);
-	frame->n_packets = n_packets;
-
-	if (thread_data->callback != NULL &&
-	    frame->buffer != NULL)
-		thread_data->callback (thread_data->user_data,
-				       ARV_STREAM_CALLBACK_TYPE_START_BUFFER,
-				       NULL);
-
-	thread_data->last_frame_id = frame_id;
-
-	if (frame_id_inc > 1) {
-		thread_data->n_missing_frames++;
-		arv_log_stream_thread ("[GvStream::_find_frame_data] Missed %d frame(s) before %u",
-				       frame_id_inc - 1, frame_id);
-	}
-
-	thread_data->frames = g_slist_append (thread_data->frames, frame);
-
-	arv_log_stream_thread ("[GvStream::_find_frame_data] Start frame %u", frame_id);
-
-	return frame;
+	return rv;
 }
 
 static void
@@ -611,7 +620,7 @@ arv_gv_stream_thread (void *data)
 				first_packet = FALSE;
 			}
 
-			frame = _find_frame_data (thread_data, frame_id, packet, packet_id, read_count, time_us);
+			frame = _find_frame_data (thread_data, frame_id, time_us);
 
 			if (frame != NULL) {
 
