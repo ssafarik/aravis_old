@@ -442,7 +442,7 @@ _close_frame (ArvGvStreamThreadData *thread_data, ArvGvStreamFrameData *frame)
 
 	if (frame->buffer->status != ARV_BUFFER_STATUS_SUCCESS &&
 	    frame->buffer->status != ARV_BUFFER_STATUS_ABORTED)
-		thread_data->n_missing_packets += (int) frame->n_packets - (frame->last_valid_packet + 1);
+		thread_data->n_missing_packets += frame->n_packets - (guint)frame->last_valid_packet - 1;
 
 	if (thread_data->callback != NULL)
 		thread_data->callback (thread_data->user_data,
