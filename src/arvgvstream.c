@@ -646,8 +646,8 @@ arv_gv_stream_thread (void *data)
 
 			if (frame)
 			{
-				// Check for OK packets.
-				if (arv_gvsp_packet_get_packet_type(packet)==ARV_GVSP_PACKET_TYPE_OK)
+				// Check for OK packets, except when it's a data trailer packet (e.g. FLIR cameras set a non-OK value for trailer packet_type).
+				if (arv_gvsp_packet_get_packet_type(packet)==ARV_GVSP_PACKET_TYPE_OK || arv_gvsp_packet_get_content_type(packet)==ARV_GVSP_CONTENT_TYPE_DATA_TRAILER)
 				{
 					/* Mark the packet as received. */
 					if (packet_id < frame->n_packets)
