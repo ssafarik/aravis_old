@@ -475,9 +475,10 @@ _check_frame_completion (ArvGvStreamThreadData *thread_data,
 			 guint64 time_us,
 			 ArvGvStreamFrameData *current_frame)
 {
-	GSList *iter;
-	ArvGvStreamFrameData *frame;
-	gboolean can_close_frame = TRUE;
+	GSList 					*iter;
+	GSList					*iterNext;
+	ArvGvStreamFrameData	*frame;
+	gboolean				 can_close_frame = TRUE;
 
 	for (iter = thread_data->frames; iter != NULL;) {
 		frame = iter->data;
@@ -489,9 +490,12 @@ _check_frame_completion (ArvGvStreamThreadData *thread_data,
 			arv_debug_stream_thread ("[GvStream::_check_frame_completion] Incomplete frame %u",
 						 frame->frame_id);
 			_close_frame (thread_data, frame);
-			thread_data->frames = iter->next;
-			g_slist_free_1 (iter);
-			iter = thread_data->frames;
+
+			// Go to the next frame, and delete the prior frame.
+			iterNext = iter->next;
+			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+			iter = iterNext;
+
 			continue;
 		}
 
@@ -501,9 +505,12 @@ _check_frame_completion (ArvGvStreamThreadData *thread_data,
 			arv_log_stream_thread ("[GvStream::_check_frame_completion] Completed frame %u",
 					       frame->frame_id);
 			_close_frame (thread_data, frame);
-			thread_data->frames = iter->next;
-			g_slist_free_1 (iter);
-			iter = thread_data->frames;
+
+			// Go to the next frame, and delete the prior frame.
+			iterNext = iter->next;
+			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+			iter = iterNext;
+
 			continue;
 		}
 
@@ -527,9 +534,12 @@ _check_frame_completion (ArvGvStreamThreadData *thread_data,
 			}
 #endif
 			_close_frame (thread_data, frame);
-			thread_data->frames = iter->next;
-			g_slist_free_1 (iter);
-			iter = thread_data->frames;
+
+			// Go to the next frame, and delete the prior frame.
+			iterNext = iter->next;
+			thread_data->frames = g_slist_delete_link(thread_data->frames, iter);
+			iter = iterNext;
+
 			continue;
 		}
 
