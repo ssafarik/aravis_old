@@ -108,7 +108,7 @@ AC_SUBST(GST_PLUGIN_LDFLAGS)
 AC_PATH_PROG(GLIB_MKENUMS, glib-mkenums)
 
 GOBJECT_INTROSPECTION_CHECK([0.10.0])
-GTK_DOC_CHECK([1.14],[--flavour no-tmpl])
+#GTK_DOC_CHECK([1.14],[--flavour no-tmpl])
 AM_CONDITIONAL([BUILD_GTK_DOC], [test "x$enable_gtk_doc" = "xyes" || test ! -f "autogen.sh"])
 
 AC_CONFIG_FILES([
